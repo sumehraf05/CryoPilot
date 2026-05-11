@@ -239,7 +239,7 @@ columns will just show `n/a`.
 
 ## Instrument Configuration
 
-The XDS.INP template is configured for the UCSF cryo-EM instrument with an
+The XDS.INP template is configured for the UCSC cryo-EM instrument with an
 ADSC CCD detector. Key parameters:
 
 | Parameter | Value | Description |
