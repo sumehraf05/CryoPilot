@@ -260,7 +260,7 @@ Normal for individual microED datasets — XSCALE merging builds redundancy.
 
 ---
 
-## License
+## License Distributed under the MIT License. See `LICENSE` for more information.
 
 MIT License — Copyright (c) 2026
 
