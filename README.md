@@ -1,4 +1,4 @@
-# MIDAS: Micro-electron diffraction Integrated Data Automation System
+# MIDAS: Micro-Electron Diffraction Integrated Data Automation System
 
 An automated pipeline for processing Micro-Electron Diffraction (microED)
 datasets. The workflow completely handles everything from raw image files
