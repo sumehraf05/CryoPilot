@@ -21,8 +21,8 @@ it straightforward to verify that the pipeline is working correctly.
 4. [Step 2: Running XDS processing](#4-step-2-running-xds-processing)
 5. [Step 3: Understanding the quality report](#5-step-3-understanding-the-quality-report)
 6. [Step 4: Training the CNN](#6-step-4-training-the-cnn)
-7. [Interpreting statistics](#9-interpreting-statistics)
-8. [Adapting to your own data](#10-adapting-to-your-own-data)
+7. [Interpreting statistics](#7-interpreting-statistics)
+8. [Adapting to your own data](#8-adapting-to-your-own-data)
 
 ---
 
