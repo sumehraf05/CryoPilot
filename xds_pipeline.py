@@ -127,7 +127,7 @@ def prompt_parent_dir() -> Path:
 
 
 # ===========================================================================
-# Week 6 Task 1 -- Image file renaming (1-indexed, rerun-safe)
+# Image file renaming (1-indexed, rerun-safe)
 # ===========================================================================
 
 def rename_and_backup(root_path: Path, subdir_name: str) -> list:
@@ -162,7 +162,7 @@ def rename_and_backup(root_path: Path, subdir_name: str) -> list:
 
 
 # ===========================================================================
-# Week 6 Task 2 -- XDS.INP generation and patching
+# XDS.INP generation and patching
 # ===========================================================================
 
 _XDS_INP_TEMPLATE = """! Auto-generated XDS.INP for dataset: {name}
@@ -383,7 +383,7 @@ def set_resolution_limit(root: Path, high_res: float) -> None:
 
 
 # ===========================================================================
-# Week 6 Task 3 / Week 7 Task 4 -- XDS execution
+# XDS execution
 # ===========================================================================
 
 def run_xds(root_path: Path, job: str, log_path: Path) -> int:
@@ -635,7 +635,7 @@ def check_images_accessible(root_path: Path, img_files: list) -> bool:
 
 
 # ===========================================================================
-# Week 6 Task 3 -- Log-file parsers
+# Log-file parsers
 # ===========================================================================
 
 def parse_idxref(root: Path) -> dict:
@@ -680,7 +680,7 @@ def parse_idxref(root: Path) -> dict:
 
 
 # ===========================================================================
-# Week 7 Task 5 -- Full summary statistics from CORRECT.LP
+# Full summary statistics from CORRECT.LP
 # (space group, unit cell, overall + highest-res shell stats)
 # ===========================================================================
 
@@ -963,7 +963,7 @@ def extract_cell_params(root: Path):
 
 
 # ===========================================================================
-# XSCALE helpers (Week 7 Tasks 7 & 8)
+# XSCALE helpers
 # ===========================================================================
 
 def write_xscale_inp(output_path: Path, hkl_entries: list,
