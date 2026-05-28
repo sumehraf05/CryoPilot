@@ -43,7 +43,6 @@ process:
 | `xds_pipeline.py` | Main pipeline — runs everything end to end |
 | `microed_cnn.py` | Neural network module — model, preprocessing, inference |
 | `train_cnn.py` | Training script — teaches the CNN using XDS results |
-| `structure_solution.py` | Structure solution — POINTLESS, SHELXT, SHELXL |
 | `microed_cnn_weights.pt` | Trained model weights (created by `train_cnn.py`) |
 | `cell_parameters_summary.csv` | Output spreadsheet generated after each run |
 | `TUTORIAL.md` | Step-by-step SOP with acetaminophen worked example |
@@ -94,12 +93,6 @@ which xds_par
 xds_par | head -4
 ```
 
-### 5. Optional: CCP4 + SHELX (for structure solution)
-
-CCP4 is required to run `structure_solution.py`. Download from
-https://www.ccp4.ac.uk. This provides `pointless`, `mtz2various`,
-`shelxt`, and `shelxl`.
-
 ---
 
 ## Quick Start
@@ -114,8 +107,6 @@ python train_cnn.py
 # Step 3: Re-run with CNN quality scores feeding into dataset selection
 python xds_pipeline.py --folder /path/to/your/data
 
-# Step 4: Run structure solution (requires CCP4)
-python structure_solution.py
 ```
 
 See `TUTORIAL.md` for a complete step-by-step walkthrough with the
