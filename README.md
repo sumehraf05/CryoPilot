@@ -1,7 +1,7 @@
 # MIDAS: Micro-Electron Diffraction Integrated Data Automation System
 
 An automated pipeline for processing Micro-Electron Diffraction (microED)
-datasets. The workflow completely handles from raw image files throughout 
+datasets. The workflow completely handles from raw image files throughout
 optimally merged final dataset with minimum user intervention.
 
 ---
@@ -18,16 +18,21 @@ process:
 
 1. Renames and backs up raw diffraction image files
 2. Generates XDS configuration files tailored to each dataset
-3. Runs XDS to find the crystal lattice and measure reflection intensities
-4. Retries indexing automatically with relaxed parameters if the first attempt fails
-5. Detects and excludes bad frames and ice rings automatically
-6. Extracts quality statistics (completeness, Rmeas, I/sigma, CC½)
-7. Applies automated resolution cutoffs based on signal quality
-8. Uses a neural network to independently check each dataset's quality
-9. Identifies the dominant crystal form and filters incompatible datasets
-10. Merges all compatible datasets with XSCALE
-11. Finds the optimal combination of datasets to maximise completeness
+3. Adaptive spot finding — tests multiple pixel thresholds and picks the best
+4. Runs XDS to find the crystal lattice and measure reflection intensities
+5. Retries indexing automatically with relaxed parameters if the first attempt fails
+6. Detects and excludes bad frames and ice rings automatically
+7. Extracts quality statistics (completeness, Rmeas, I/sigma, CC½)
+8. Applies automated resolution cutoffs based on signal quality
+9. Uses a neural network to independently check each dataset's quality
+10. Identifies the dominant crystal form and filters incompatible datasets
+11. Re-indexes deviating datasets using the consensus cell
+12. Merges all compatible datasets with XSCALE
+13. Finds the optimal combination of datasets to maximise completeness
     while minimising degradation of data quality
+14. Pushes the resolution limit beyond the best individual dataset
+15. Converts the final merged dataset to SHELX format (shelx.hkl)
+16. Saves a timestamped log file named after the parent folder
 
 ---
 
@@ -52,9 +57,7 @@ process:
 
 Download from https://www.anaconda.com/download or https://docs.conda.io/en/latest/miniconda.html
 
-### 2. Create the conda environments
-
-The pipeline uses two environments:
+### 2. Create the conda environment
 
 **`xds`** — for running the main pipeline:
 ```bash
@@ -110,6 +113,9 @@ python train_cnn.py
 
 # Step 3: Re-run with CNN quality scores feeding into dataset selection
 python xds_pipeline.py --folder /path/to/your/data
+
+# Step 4: Run structure solution (requires CCP4)
+python structure_solution.py
 ```
 
 See `TUTORIAL.md` for a complete step-by-step walkthrough with the
@@ -167,6 +173,7 @@ After a successful run, your data folder will contain:
 ```
 parent_folder/
     cell_parameters_summary.csv        # Quality metrics for every crystal
+    parent_folder_YYYYMMDD_HHMMSS.log  # Timestamped log of the full run
     crystal-1/
         XDS.INP                        # XDS configuration (auto-generated)
         XDS_ASCII.HKL                  # Processed reflections
@@ -180,10 +187,12 @@ parent_folder/
             XSCALE.HKL                 # All compatible datasets merged (baseline)
         optimal/
             XSCALE.HKL                 # Best subset merged (use this)
+            shelx.hkl                  # SHELX format for structure solution
         trials/                        # One folder per greedy search step
 ```
 
 **The file to use for structure determination is `xscale/optimal/XSCALE.HKL`.**
+**The SHELX-format file for SHELXS/SHELXL is `xscale/optimal/shelx.hkl`.**
 
 ---
 
@@ -214,7 +223,13 @@ parent_folder/
 **Filter 1 — Dominant crystal form:** For each unit cell parameter the pipeline
 computes the median and median absolute deviation (MAD). Any dataset more than
 3 MADs from the median is automatically rejected as a wrong indexing solution
-or incompatible crystal form.
+or incompatible crystal form. An absolute tolerance check (2 Å / 5°) is then
+applied as a second pass.
+
+**Consensus cell correction:** After the initial run, the pipeline computes
+the consensus cell from all successful datasets and re-indexes any crystal that
+deviates by more than 1.5 Å or 3° from the consensus. This corrects datasets
+where XDS picked an alternative indexing solution.
 
 **Filter 2 — Quality ranking:** Compatible datasets are ranked by a composite
 quality score (indexed fraction, completeness, I/sigma, CNN score).
@@ -222,6 +237,10 @@ quality score (indexed fraction, completeness, I/sigma, CNN score).
 **Greedy forward selection:** Starting with the best dataset, each remaining
 dataset is tested by running XSCALE with it included. It is kept only if the
 merged completeness, CC½, and Rmeas all genuinely improve.
+
+**Resolution extension:** The final merge uses the best individual resolution
+limit extended by 0.1 Å (capped at 0.80 Å) to maximise the high-resolution
+content of the merged dataset.
 
 ---
 
@@ -252,14 +271,18 @@ a CETA 16M detector operated in 2×2 binning mode.
 | `NX` / `NY` | 2048 / 2048 | Detector size in pixels (2×2 binned from 4096×4096) |
 | `QX` / `QY` | 0.028 mm | Effective pixel size (14 µm native × 2 binning) |
 | `ORGX` / `ORGY` | 1043 / 1046 | Beam centre in pixels (instrument-specific, X ≠ Y) |
-| `DETECTOR_DISTANCE` | 1304.07 mm | Sample to detector distance |
 | `X-RAY_WAVELENGTH` | 0.025082 Å | Electron wavelength at 200 kV |
 | `GAIN` | 15 | Detector gain |
 | `OVERLOAD` | 65000 | Pixel saturation threshold |
 | `OSCILLATION_RANGE` | 1.0 deg | Rotation per frame |
 
-To adapt for a different instrument, update `_XDS_INP_TEMPLATE`,
-`_ORGX_DEFAULT`, and `_ORGY_DEFAULT` in `xds_pipeline.py`.
+The detector distance is read automatically from the image header
+(`DETECTOR_DISTANCE` or `DISTANCE` key). The beam centre is always
+hardcoded to ORGX=1043, ORGY=1046 for this instrument regardless of
+what the header contains.
+
+To adapt for a different instrument, update `_XDS_INP_TEMPLATE` in
+`xds_pipeline.py`.
 
 ---
 
@@ -269,7 +292,8 @@ To adapt for a different instrument, update `_XDS_INP_TEMPLATE`,
 
 **XDS license expired:** Download latest from https://xds.mr.mpg.de
 
-**ILLEGAL KEYWORD error:** Delete old XDS.INP files and re-run:
+**ILLEGAL KEYWORD error:** Old XDS.INP files are cleaned automatically
+on each run. If the error persists, delete manually:
 ```bash
 find /path/to/data -name "XDS.INP" -delete && python xds_pipeline.py
 ```
@@ -288,6 +312,13 @@ Normal for individual microED datasets — XSCALE merging builds redundancy.
 ```bash
 conda install -c pytorch pytorch torchvision
 ```
+
+**shelx.hkl not produced:** Check that `xdsconv` is on your PATH:
+```bash
+which xdsconv
+```
+`xdsconv` is part of the XDS package and should be available once XDS is
+installed.
 
 ---
 
