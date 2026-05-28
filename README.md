@@ -99,13 +99,13 @@ xds_par | head -4
  
 ```bash
 # Step 1: Process all crystals through XDS and merge with XSCALE
-python xds_pipeline.py --folder /path/to/your/data
+python3 xds_pipeline.py --folder /path/to/your/data
  
 # Step 2: Train the CNN on your results
-python train_cnn.py
+python3 train_cnn.py
  
 # Step 3: Re-run with CNN quality scores feeding into dataset selection
-python xds_pipeline.py --folder /path/to/your/data
+python3 xds_pipeline.py --folder /path/to/your/data
 ```
  
 After each run the pipeline automatically produces two output files in
@@ -121,7 +121,7 @@ acetaminophen as a worked example.
 ## Running the Pipeline
  
 ```bash
-python xds_pipeline.py
+python3 xds_pipeline.py
 ```
  
 When prompted, drag your parent folder (the one containing all your crystal
