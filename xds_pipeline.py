@@ -1,32 +1,57 @@
 #!/usr/bin/env python3
 
 """
-xds_pipeline.py
-===============
+xds_pipeline.py  —  MIDAS: Micro-Electron Diffraction Integrated Data Automation System
+========================================================================================
 Automated batch processing pipeline for MicroED crystallographic datasets.
+Handles everything from raw diffraction images to a publication-ready merged
+dataset with minimal user intervention.
 
-    1. Renumber image files starting at 1 (rerun-safe, backs up originals)
-    2. Auto-generate or patch XDS.INP with per-dataset parameters from the
-       image header (distance, wavelength, beam centre, data range, etc.)
-    3. Loop XDS processing through all required steps automatically:
-       Phase 1 -> XYCORR INIT COLSPOT IDXREF
-       Phase 2 -> DEFPIX INTEGRATE CORRECT
-    4. Recursively detect and process all dataset subdirectories in one run
-    5. Extract and report full summary statistics per dataset:
-         - Space group number
-         - Unit cell parameters (a, b, c, alpha, beta, gamma)
-         - Completeness, Rmeas, I/sig, CC½  (overall AND highest-res shell)
-    6. Automated resolution cutoff: detect the shell where <I/sig> drops
-       below a threshold (default 2.0) and rerun CORRECT with that limit
-    7. Write XSCALE.INP (with space group + unit cell) and run XSCALE
-    8. Greedy subset search: find the combination of datasets that maximises
-       completeness while minimising Rmerge / CC½ degradation
+What it does:
+    1.  Renames image files starting at 1 (rerun-safe, backs up originals)
+    2.  Reads detector parameters from image headers (distance, wavelength,
+        starting angle) and generates a per-dataset XDS.INP automatically
+    3.  Adaptive spot finding: tests MINIMUM_NUMBER_OF_PIXELS_IN_A_SPOT = 3, 4, 6
+        and picks the value that gives the highest indexed fraction
+    4.  Runs XDS Phase 1 (XYCORR INIT COLSPOT IDXREF) and auto-retries with
+        relaxed parameters if indexing falls below 15%
+    5.  Runs XDS Phase 2 (DEFPIX INTEGRATE CORRECT)
+    6.  Detects and excludes bad frames based on per-frame I/sigma and
+        fraction-observed statistics from INTEGRATE.LP
+    7.  Detects ice rings from CORRECT.LP and adds EXCLUDE_RESOLUTION_RANGE
+    8.  Applies automated resolution cutoff where I/sigma drops below threshold
+    9.  Extracts full quality statistics per dataset:
+          - Space group, unit cell (a, b, c, alpha, beta, gamma)
+          - Completeness, Rmeas, I/sigma, CC½  (overall AND hi-res shell)
+          - Resolution limit (Angstroms)
+   10.  CNN quality check: ResNet-18 network independently predicts the unit
+        cell and a quality score (0-1) from raw diffraction images
+   11.  Computes consensus unit cell across all datasets and re-indexes any
+        dataset that deviates, forcing it toward the true lattice
+   12.  Identifies the dominant crystal form using MAD-based outlier detection
+        and filters incompatible datasets automatically
+   13.  Ranks compatible datasets by quality score
+   14.  Merges all compatible datasets with XSCALE (baseline)
+   15.  Greedy forward selection: finds the optimal subset of datasets that
+        maximises completeness while keeping Rmeas and CC½ high
+   16.  Pushes the resolution limit by extending 0.1 A beyond the best
+        individual dataset and testing whether merged signal is present
+   17.  Converts the final merged XSCALE.HKL to SHELX format (shelx.hkl)
+        using XDSCONV for direct use with SHELXS/SHELXL
+   18.  Saves a timestamped log file named after the parent folder
+   19.  Supports parallel processing (--workers N), watch mode (--watch),
+        and direct folder specification (--folder PATH)
 
 Usage:
-  python xds_pipeline.py
+  python xds_pipeline.py                          # interactive prompt
+  python xds_pipeline.py --folder /path/to/data  # direct path
+  python xds_pipeline.py --workers 4             # parallel (4 crystals at once)
+  python xds_pipeline.py --watch                 # continuous monitoring mode
 
-You will be prompted to drag-and-drop the parent folder containing all dataset
-subdirectories. XDS (xds_par) and XSCALE (xscale_par) must be on your PATH.
+Requirements:
+  xds_par and xscale_par must be on your PATH.
+  xdsconv must be on PATH for SHELX format conversion.
+  See README.md for conda environment setup instructions.
 
 """
 
@@ -2596,7 +2621,16 @@ def main():
                 hi_res_vals.append(v)
     if hi_res_vals:
         hi_res_vals.sort()
-        resolution_high = hi_res_vals[len(hi_res_vals) // 2]
+        # Use the best (lowest = highest resolution) individual limit
+        # rather than the median -- this pushes the merged dataset as
+        # far as the best crystal reaches.
+        # Then try extending by 0.1 A to see if there is more signal.
+        best_individual = hi_res_vals[0]
+        extended         = round(best_individual - 0.10, 2)
+        resolution_high  = max(extended, 0.80)   # never go below 0.80 A
+        log.info("  Best individual resolution: %.2f A  "
+                 "-> Attempting extended limit: %.2f A",
+                 best_individual, resolution_high)
     else:
         resolution_high = 2.0
 
@@ -2751,6 +2785,47 @@ def main():
         _fmt(f"All compatible ({len(good_names)})", all_stats, resolution_high)
         _fmt(f"Optimal ({len(opt_names)})",          opt_stats, resolution_high)
         log.info("%s", sep2)
+
+    # ===================================================================
+    # SHELX FORMAT CONVERSION
+    # Convert the optimal XSCALE.HKL to SHELX format using XDSCONV.
+    # This produces a shelx.hkl file ready for direct use with SHELXS/SHELXL.
+    # ===================================================================
+    xscale_hkl = opt_dir / "XSCALE.HKL"
+    if xscale_hkl.exists() and shutil.which("xdsconv"):
+        log.info("\n%s", sep)
+        log.info("  SHELX FORMAT CONVERSION (XDSCONV)")
+        log.info("%s", sep2)
+        shelx_out = opt_dir / "shelx.hkl"
+
+        # Write XDSCONV.INP
+        xdsconv_inp = opt_dir / "XDSCONV.INP"
+        xdsconv_inp.write_text(
+            f"INPUT_FILE= {xscale_hkl}\n"
+            f"OUTPUT_FILE= shelx.hkl SHELX\n"
+            f"FRIEDEL'S_LAW= FALSE\n"
+            f"INCLUDE_RESOLUTION_RANGE= 50.0 {resolution_high:.2f}\n"
+        )
+
+        xdsconv_log = opt_dir / "XDSCONV.LP"
+        with open(xdsconv_log, "w") as lf:
+            subprocess.run(
+                ["xdsconv"],
+                cwd=str(opt_dir),
+                stdout=lf,
+                stderr=subprocess.STDOUT,
+            )
+
+        if shelx_out.exists() and shelx_out.stat().st_size > 100:
+            n_ref = sum(1 for _ in open(shelx_out))
+            log.info("  SHELX HKL written: %s", shelx_out)
+            log.info("  Reflections      : %d", n_ref)
+            log.info("  Resolution limit : %.2f Angstroms", resolution_high)
+            log.info("  Ready for SHELXS/SHELXL structure solution")
+        else:
+            log.warning("  XDSCONV did not produce shelx.hkl -- see %s", xdsconv_log)
+    elif not shutil.which("xdsconv"):
+        log.info("  (xdsconv not on PATH -- skipping SHELX conversion)")
 
     log.info("%s", sep)
     log.info("  DATA SUMMARY")
